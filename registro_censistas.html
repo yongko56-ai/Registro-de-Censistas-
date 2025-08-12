@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Registro de Censistas</title>
+
+  <!-- Tailwind for quick styling + Chart.js + SheetJS for exports -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#0f172a; --card:#0b1220; --muted:#94a3b8; --text:#e6eef8; --accent:#3b82f6; --accent-2:#60a5fa;
+    }
+    .light{
+      --bg:#f8fafc; --card:#ffffff; --muted:#475569; --text:#0f172a; --accent:#2563eb; --accent-2:#60a5fa;
+    }
+    body{
+      background:var(--bg);
+      color:var(--text);
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+      transition:background .25s,color .25s;
+    }
+    .card{ background:var(--card); border-radius:12px; padding:16px; box-shadow:0 6px 18px rgba(2,6,23,0.45); }
+    .muted{ color:var(--muted); }
+    .btn{ background:var(--accent); color:white; padding:8px 12px; border-radius:8px; font-weight:600; }
+    .btn-ghost{ background:transparent; color:var(--text); border:1px solid rgba(255,255,255,0.06); padding:8px 10px; border-radius:8px; }
+    input,select{ background:rgba(255,255,255,0.02); color:var(--text); border-radius:8px; padding:8px; border:1px solid rgba(255,255,255,0.04); }
+    .table th, .table td{ padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.03); }
+    @media (max-width:768px){ .md-grid{ grid-template-columns: 1fr !important } }
+  </style>
+</head>
+<body>
+
+  <div class="max-w-6xl mx-auto p-4">
+    <header class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-semibold">📋 Registro de Asistencia y Avance</h1>
+        <div class="muted text-sm">Sobrio • Sin login • Datos en el navegador</div>
+      </div>
+
+      <!-- Theme switch -->
+      <div class="flex items-center gap-3">
+        <span class="muted text-sm">☀️</span>
+        <label class="inline-flex relative items-center cursor-pointer">
+          <input id="themeToggle" type="checkbox" class="sr-only" />
+          <div class="w-12 h-6 bg-gray-300 rounded-full peer"></div>
+          <span id="thumb" style="position:absolute; left:4px; top:4px; width:18px; height:18px; background:white; border-radius:999px; transition:transform .22s;"></span>
+        </label>
+        <span class="muted text-sm">🌙</span>
+      </div>
+    </header>
+
+    <main class="grid md:grid-cols-3 gap-6 md-grid">
+      <!-- Sidebar -->
+      <aside class="md:col-span-1 space-y-6">
+        <div class="card">
+          <label class="block text-sm muted mb-2">Seleccionar fecha</label>
+          <div class="flex gap-2 items-center">
+            <button id="prevDay" class="btn-ghost">◀</button>
+            <input id="fechaSelector" type="date" class="flex-1" />
+            <button id="nextDay" class="btn-ghost">▶</button>
+          </div>
+          <p class="muted text-xs mt-2">Selecciona la fecha exacta para ver o registrar ese día.</p>
+        </div>
+
+        <div class="card">
+          <div class="flex justify-between items-center mb-3">
+            <h3 class="font-medium">Resumen consolidado</h3>
+            <button id="exportResumen" class="btn btn-sm">Exportar</button>
+          </div>
+          <div id="resumenConsolidado" class="text-sm muted space-y-2"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="font-medium mb-2">🏆 Ranking</h3>
+          <ol id="ranking" class="list-decimal ml-5 muted text-sm"></ol>
+        </div>
+      </aside>
+
+      <!-- Panel central -->
+      <section class="md:col-span-2 space-y-6">
+        <div class="card">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold">Panel diario — <span id="fechaPanel" class="muted"></span></h2>
+            <div class="flex items-center gap-3">
+              <label class="muted text-sm">Censista</label>
+              <select id="censistaSelected"></select>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between mb-4 gap-4">
+            <div class="text-sm muted">
+              <div>Asistencia: <strong id="selectedAsistencia">-</strong></div>
+              <div>Avance total: <strong id="selectedAvance">0</strong></div>
+            </div>
+
+            <div class="flex gap-2">
+              <button id="exportDia" class="btn-ghost">Exportar día (CSV)</button>
+              <button id="resetAll" class="btn-ghost">Reset local</button>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm muted mb-1">Registrar Asistencia</label>
+              <div class="flex gap-2">
+                <select id="censistaAsistencia" class="flex-1"></select>
+                <select id="estadoAsistencia" style="width:140px;">
+                  <option value="Presente">Presente</option>
+                  <option value="Ausente">Ausente</option>
+                </select>
+              </div>
+              <div class="mt-3">
+                <button id="guardarAsis" class="btn">Guardar asistencia</button>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm muted mb-1">Registrar Avance</label>
+              <div class="flex gap-2">
+                <select id="censistaAvance" class="flex-1"></select>
+                <input id="viviendas" type="number" min="0" placeholder="N° viviendas" style="width:140px;" />
+              </div>
+              <div class="mt-3 flex gap-2">
+                <button id="sumarAvance" class="btn">Sumar</button>
+                <button id="setAvance" class="btn btn-ghost">Setear</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="font-medium mb-3">Panel de control</h3>
+          <div class="overflow-x-auto mb-4">
+            <table class="table w-full text-left">
+              <thead>
+                <tr class="muted">
+                  <th>Censista</th>
+                  <th>Asistencia</th>
+                  <th>Avance</th>
+                </tr>
+              </thead>
+              <tbody id="tablaCensistas"></tbody>
+            </table>
+          </div>
+
+          <div>
+            <h4 class="font-medium mb-2 muted">Gráfico de Avance (día)</h4>
+            <canvas id="graficoAvance" style="max-height:260px"></canvas>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="mt-6 text-center muted text-xs">Creado para Steve • Datos guardados en localStorage</footer>
+  </div>
+
+<script>
+/* -------------------- Config -------------------- */
+const STORAGE_KEY = 'registro_censistas_final_v1';
+const THEME_KEY = 'registro_theme_v1';
+
+// NOMBRES CORTOS (tal como pediste)
+const censistas = [
+  '0013 - Rojas Raquel',
+  '0014 - Orosco Cristian',
+  '0015 - Limache Anyel',
+  '0016 - Revilla Aime'
+];
+
+/* -------------------- Fecha helpers (sin shift de zona horaria) -------------------- */
+function formatDateKey(d){
+  // d: Date object
+  return d.getFullYear().toString().padStart(4,'0') + '-' +
+         (d.getMonth()+1).toString().padStart(2,'0') + '-' +
+         d.getDate().toString().padStart(2,'0');
+}
+function parseDateKey(key){
+  const [y,m,day] = key.split('-').map(x => parseInt(x,10));
+  return new Date(y, m-1, day);
+}
+function readableDateFromKey(key){
+  const d = parseDateKey(key);
+  return d.toLocaleDateString();
+}
+
+/* -------------------- Storage -------------------- */
+function loadAll(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e){ return {}; } }
+function saveAll(obj){ localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); }
+
+/* -------------------- UI refs -------------------- */
+const fechaSelector = document.getElementById('fechaSelector');
+const fechaPanel = document.getElementById('fechaPanel');
+const selMain = document.getElementById('censistaSelected');
+const selAsis = document.getElementById('censistaAsistencia');
+const selAv = document.getElementById('censistaAvance');
+const estadoAsis = document.getElementById('estadoAsistencia');
+const viviendasInp = document.getElementById('viviendas');
+const tablaBody = document.getElementById('tablaCensistas');
+const resumenDiv = document.getElementById('resumenConsolidado');
+const rankingOl = document.getElementById('ranking');
+const selectedAsistenciaSpan = document.getElementById('selectedAsistencia');
+const selectedAvanceSpan = document.getElementById('selectedAvance');
+
+/* -------------------- Inicialización UI -------------------- */
+function initSelectors(){
+  [selMain, selAsis, selAv].forEach(s => {
+    s.innerHTML = '<option value="">Seleccione censista</option>';
+    censistas.forEach(c => {
+      const o = document.createElement('option'); o.value = c; o.textContent = c; s.appendChild(o);
+    });
+  });
+}
+
+function initDateUI(){
+  const today = new Date();
+  const key = formatDateKey(today);
+  fechaSelector.value = key;
+  fechaPanel.textContent = readableDateFromKey(key);
+}
+
+/* -------------------- Estado por fecha -------------------- */
+function ensureDateState(dateKey){
+  const all = loadAll();
+  if (!all[dateKey]){
+    all[dateKey] = { datos: {} };
+    censistas.forEach(c => all[dateKey].datos[c] = { asistencia:'-', avance:0 });
+    saveAll(all);
+  }
+  return all[dateKey];
+}
+
+/* -------------------- Render para una fecha -------------------- */
+function renderForDate(dateKey){
+  ensureDateState(dateKey);
+  const all = loadAll();
+  const day = all[dateKey];
+
+  // tabla
+  tablaBody.innerHTML = '';
+  censistas.forEach(c => {
+    const rec = day.datos[c] || { asistencia:'-', avance:0 };
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${c}</td><td class="${rec.asistencia==='Presente'?'text-green-400':'text-red-400'}">${rec.asistencia}</td><td>${rec.avance}</td>`;
+    tablaBody.appendChild(tr);
+  });
+
+  // actualizar panel principal si hay seleccionado
+  if (selMain.value) updateSelectedPanel(selMain.value, dateKey);
+  actualizarGrafico(dateKey);
+}
+
+/* -------------------- Actualizar panel seleccionado -------------------- */
+function updateSelectedPanel(censistaName, dateKey){
+  const all = loadAll();
+  ensureDateState(dateKey);
+  const rec = (all[dateKey].datos && all[dateKey].datos[censistaName]) ? all[dateKey].datos[censistaName] : { asistencia:'-', avance:0 };
+  selectedAsistenciaSpan.textContent = rec.asistencia || '-';
+  selectedAvanceSpan.textContent = rec.avance || 0;
+  // sincroniza selects y formularios
+  selAsis.value = censistaName;
+  selAv.value = censistaName;
+  estadoAsis.value = (rec.asistencia === 'Presente' || rec.asistencia === 'Ausente') ? rec.asistencia : 'Presente';
+  viviendasInp.value = '';
+}
+
+/* -------------------- Guardar acciones -------------------- */
+function guardarAsistencia(){
+  const cens = selAsis.value; if (!cens) return alert('Selecciona un censista para guardar asistencia');
+  const estado = estadoAsis.value;
+  const key = fechaSelector.value; ensureDateState(key);
+  const all = loadAll(); all[key].datos[cens].asistencia = estado; saveAll(all);
+  renderForDate(key); actualizarResumenYRanking();
+}
+
+function sumarAvance(){
+  const cens = selAv.value; if (!cens) return alert('Selecciona un censista para registrar avance');
+  const num = parseInt(viviendasInp.value || '0',10); if (isNaN(num) || num < 0) return alert('Ingresa un número válido');
+  const key = fechaSelector.value; ensureDateState(key);
+  const all = loadAll(); all[key].datos[cens].avance = (all[key].datos[cens].avance || 0) + num; saveAll(all);
+  viviendasInp.value = '';
+  renderForDate(key); actualizarResumenYRanking();
+}
+
+function setAvance(){
+  const cens = selAv.value; if (!cens) return alert('Selecciona un censista para setear avance');
+  const num = parseInt(viviendasInp.value || '0',10); if (isNaN(num) || num < 0) return alert('Ingresa un número válido');
+  const key = fechaSelector.value; ensureDateState(key);
+  const all = loadAll(); all[key].datos[cens].avance = num; saveAll(all);
+  viviendasInp.value = '';
+  renderForDate(key); actualizarResumenYRanking();
+}
+
+/* -------------------- Resumen consolidado + ranking -------------------- */
+function actualizarResumenYRanking(){
+  const all = loadAll();
+  const resumen = {};
+  censistas.forEach(c => resumen[c] = { asistencias:0, viviendas:0, diasTrabajados:0 });
+
+  Object.keys(all).forEach(dk => {
+    const day = all[dk];
+    censistas.forEach(c => {
+      const rec = day.datos[c] || { asistencia:'-', avance:0 };
+      if (rec.asistencia === 'Presente') resumen[c].asistencias++;
+      if ((rec.avance || 0) > 0){ resumen[c].viviendas += rec.avance; resumen[c].diasTrabajados++; }
+    });
+  });
+
+  // render resumen
+  resumenDiv.innerHTML = '';
+  censistas.forEach(c => {
+    const r = resumen[c];
+    const avg = r.diasTrabajados ? (r.viviendas / r.diasTrabajados).toFixed(2) : '0.00';
+    const node = document.createElement('div'); node.className = 'pb-2';
+    node.innerHTML = `<div class="font-medium">${c}</div><div class="muted text-xs">Asistencias: ${r.asistencias} • Viviendas: ${r.viviendas} • Promedio/día: ${avg}</div>`;
+    resumenDiv.appendChild(node);
+  });
+
+  // ranking
+  const ranked = Object.keys(resumen).map(c=> ({ nombre:c, viviendas:resumen[c].viviendas }));
+  ranked.sort((a,b)=> b.viviendas - a.viviendas);
+  rankingOl.innerHTML = '';
+  ranked.forEach(r => { const li = document.createElement('li'); li.textContent = `${r.nombre} — ${r.viviendas}`; rankingOl.appendChild(li); });
+}
+
+/* -------------------- Export CSV / Excel / Reset -------------------- */
+function exportDayCSV(){
+  const key = fechaSelector.value; ensureDateState(key);
+  const all = loadAll(); const day = all[key];
+  const rows = [['Censista','Asistencia','Viviendas']];
+  censistas.forEach(c => { const rec = day.datos[c] || { asistencia:'-', avance:0 }; rows.push([c, rec.asistencia||'-', rec.avance||0]); });
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `avance_${key}.csv`; a.click(); URL.revokeObjectURL(url);
+}
+
+function exportResumenExcel(){
+  const ws_data = [['Censista','Asistencias','Viviendas','Promedio/día']];
+  const all = loadAll(); const resumen = {}; censistas.forEach(c=>resumen[c]={asistencias:0,viviendas:0,dias:0});
+  Object.keys(all).forEach(dk => { const day = all[dk]; censistas.forEach(c => { const rec = day.datos[c] || {asistencia:'-',avance:0}; if (rec.asistencia==='Presente') resumen[c].asistencias++; if ((rec.avance||0)>0){ resumen[c].viviendas+=rec.avance; resumen[c].dias++; } }); });
+  censistas.forEach(c=>{ const r=resumen[c]; const avg = r.dias ? (r.viviendas / r.dias).toFixed(2) : '0.00'; ws_data.push([c, r.asistencias, r.viviendas, avg]); });
+  const wb = XLSX.utils.book_new(); const ws = XLSX.utils.aoa_to_sheet(ws_data); XLSX.utils.book_append_sheet(wb, ws, 'Resumen'); XLSX.writeFile(wb, 'resumen_censistas.xlsx');
+}
+
+function resetLocal(){ if (!confirm('¿Eliminar todos los datos locales? Esta acción no se puede deshacer.')) return; localStorage.removeItem(STORAGE_KEY); location.reload(); }
+
+/* -------------------- Gráfica día -------------------- */
+let chart;
+function actualizarGrafico(dateKey){
+  ensureDateState(dateKey);
+  const all = loadAll(); const day = all[dateKey];
+  const labels = censistas.slice();
+  const data = labels.map(c => (day.datos[c] && day.datos[c].avance) ? day.datos[c].avance : 0);
+  const ctx = document.getElementById('graficoAvance').getContext('2d'); if (chart) chart.destroy();
+  chart = new Chart(ctx, { type:'bar', data:{ labels, datasets:[{ label:'Viviendas', data, backgroundColor: labels.map((_,i)=>`rgba(59,130,246, ${0.7 - i*0.08})`) }]}, options:{ responsive:true, scales:{ y:{ beginAtZero:true } } } });
+}
+
+/* -------------------- Eventos UI -------------------- */
+// Prev / Next day: use parseDateKey to avoid timezone shift
+document.getElementById('prevDay').addEventListener('click', ()=>{
+  const curKey = fechaSelector.value;
+  const d = parseDateKey(curKey);
+  d.setDate(d.getDate()-1);
+  const newKey = formatDateKey(d);
+  fechaSelector.value = newKey;
+  fechaPanel.textContent = readableDateFromKey(newKey);
+  renderForDate(newKey);
+});
+document.getElementById('nextDay').addEventListener('click', ()=>{
+  const curKey = fechaSelector.value;
+  const d = parseDateKey(curKey);
+  d.setDate(d.getDate()+1);
+  const newKey = formatDateKey(d);
+  fechaSelector.value = newKey;
+  fechaPanel.textContent = readableDateFromKey(newKey);
+  renderForDate(newKey);
+});
+fechaSelector.addEventListener('change',(e)=>{
+  const key = e.target.value;
+  if (!key) return;
+  fechaPanel.textContent = readableDateFromKey(key);
+  renderForDate(key);
+});
+
+selMain.addEventListener('change', ()=> updateSelectedPanel(selMain.value, fechaSelector.value));
+document.getElementById('guardarAsis').addEventListener('click', guardarAsistencia);
+document.getElementById('sumarAvance').addEventListener('click', sumarAvance);
+document.getElementById('setAvance').addEventListener('click', setAvance);
+document.getElementById('exportDia').addEventListener('click', exportDayCSV);
+document.getElementById('exportResumen').addEventListener('click', exportResumenExcel);
+document.getElementById('resetAll').addEventListener('click', resetLocal);
+
+/* -------------------- Theme handling -------------------- */
+const themeToggle = document.getElementById('themeToggle');
+function applyTheme(theme){
+  if (theme === 'light'){ document.documentElement.classList.add('light'); document.getElementById('thumb').style.transform = 'translateX(0px)'; }
+  else { document.documentElement.classList.remove('light'); document.getElementById('thumb').style.transform = 'translateX(24px)'; }
+}
+themeToggle.addEventListener('change', (e)=>{
+  const t = e.target.checked ? 'dark' : 'light';
+  localStorage.setItem(THEME_KEY, t);
+  applyTheme(t === 'dark' ? 'dark' : 'light');
+});
+(function initTheme(){ const saved = localStorage.getItem(THEME_KEY) || 'dark'; themeToggle.checked = (saved === 'dark'); applyTheme(saved === 'dark' ? 'dark' : 'light'); })();
+
+/* -------------------- Bootstrap -------------------- */
+function bootstrap(){
+  initSelectors();
+  initDateUI();
+  const key = fechaSelector.value;
+  ensureDateState(key);
+  renderForDate(key);
+  actualizarResumenYRanking();
+}
+bootstrap();
+
+</script>
+</body>
+</html>
